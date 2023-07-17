@@ -1,37 +1,32 @@
 import sqlite3
 import pandas as pd
 
+pd.set_option('display.max_columns', None)
+pd.set_option('display.max_rows', None)
+
 def read_db():
-    dbfile = 'C:/Users/phill/Music/MM_20230716212410 - Copy.DB'
+    dbfile = 'C:/Users/phill/Music/MM_20230717212635.DB'
     con = sqlite3.connect(dbfile)
     cur = con.cursor()
 
     sql = """
-        SELECT Artist, Album, SongTitle, Rating, SongLength
+        SELECT AlbumArtist, Album, SongTitle, Rating, SongLength
         FROM Songs
         WHERE length(Album) > 0
         """
 
     for row in cur.execute(sql):
-        # print(row)
+
         output_list.append(row)
 
     con.close
 
-    print(output_list)
+def create_dataframe(input_list):
 
+    album_df = pd.DataFrame(input_list, columns=['Artist', 'Album', 'Title', 'Rating', 'Duration'])
+    album_df['timerating'] = album_df.Duration * album_df.Rating
 
-def ranking_alg(df):
-
-    #Group by album
-    df.drop(['Title'],axis=1, inplace=True)
-    df = df.groupby(['Artist','Album'], axis = 0).agg({'timerating': 'sum', 'Duration': 'sum'})
-    df['piprating'] = df.timerating / df.Duration
-    df.drop(['timerating','Duration'], axis=1,inplace=True)
-
-    return df
-
-
+    return album_df
 
 def create_test_dataframe():
 
@@ -76,7 +71,17 @@ def create_test_dataframe():
         ('Sarah Blasko', 'The Overture & The Underscore', 'Sweet November', -1, 235400),
         ('Sarah Blasko', 'The Overture & The Underscore', 'Cinders', 50, 249480),
         ('Sarah Blasko', 'The Overture & The Underscore', 'True Intentions', 40, 251784),
-        ('Sarah Blasko', 'The Overture & The Underscore', 'Remorse', 40, 938504)
+        ('Sarah Blasko', 'The Overture & The Underscore', 'Remorse', 40, 938504),
+        ('Laura Marling', "A Creature I Don't Know", 'The Muse', 60, 221335),
+        ('Laura Marling', "A Creature I Don't Know", 'I Was Just A Card', 60, 210755),
+        ('Laura Marling', "A Creature I Don't Know", "Don't Ask Me Why", 40, 238968),
+        ('Laura Marling', "A Creature I Don't Know", 'Salinas', 60, 277342),
+        ('Laura Marling', "A Creature I Don't Know", 'The Beast', 60, 345573),
+        ('Laura Marling', "A Creature I Don't Know", 'Night After Night', 60, 308532),
+        ('Laura Marling', "A Creature I Don't Know", 'My Friends', 60, 238367),
+        ('Laura Marling', "A Creature I Don't Know", 'Rest In Bed', 40, 188525),
+        ('Laura Marling', "A Creature I Don't Know", 'Sophia', 80, 291996),
+        ('Laura Marling', "A Creature I Don't Know", 'All My Rage', 60, 171650)
 
 
     ]
@@ -87,22 +92,44 @@ def create_test_dataframe():
 
     return test_df
 
+def ranking_alg(df):
+
+    #Group by album
+    df.drop(['Title'],axis=1, inplace=True)
+    grouped_df = df.groupby(['Artist','Album'], axis = 0).agg({'timerating': 'sum', 'Duration': 'sum'})
+
+    #Need to drop any album that doesn't have all its songs rated
+
+    #Make a new df with the minimum rating from each album
+    #Then merge it with the main df
+    elimination_df = df.groupby(['Artist', 'Album'], axis = 0).agg({'Rating': 'min'})
+    elimination_df.rename(columns = {'Rating':'AlbumMinRating'}, inplace =True)
+
+    grouped_df = grouped_df.merge(elimination_df, how = 'left', on = ['Artist', 'Album'])
+
+    #Calculate the Piprating (TM). This is an extremely basic first attempt (simple time-weighted average)
+    grouped_df['piprating'] = grouped_df.timerating / grouped_df.Duration
+
+    #Drop all rows with min rating -1 (means unrated in MM)
+    grouped_df = grouped_df[grouped_df.AlbumMinRating != -1]
+
+    #Drop unnecessary columns
+    grouped_df.drop(['timerating','Duration', 'AlbumMinRating'], axis=1,inplace=True)
+
+    return grouped_df
+
+
 if __name__ == '__main__':
 
     output_list = []
 
     read_db()
 
-    output_df = pd.DataFrame(output_list, columns=['Artist', 'Album', 'Title', 'Rating', 'Duration'])
+    output_df = create_dataframe(output_list)
 
+    # output_df = create_test_dataframe() #uncomment this line to use the test df
 
-    #for now use a test df
-
-    output_df = create_test_dataframe()
-
-    print(output_df)
-
-    ranked_df = ranking_alg(output_df)
+    ranked_df = ranking_alg(output_df).sort_values(by = "piprating", ascending = False)
 
     print(ranked_df)
 
