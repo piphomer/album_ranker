@@ -1,11 +1,13 @@
 import sqlite3
 import pandas as pd
+import numpy as np
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
+pd.options.display.width = 110
 
 def read_db():
-    dbfile = 'C:/Users/phill/Music/MM_20230717212635.DB'
+    dbfile = 'C:/Users/phill/Music/MM_20230719063704.DB'
     con = sqlite3.connect(dbfile)
     cur = con.cursor()
 
@@ -24,7 +26,6 @@ def read_db():
 def create_dataframe(input_list):
 
     album_df = pd.DataFrame(input_list, columns=['Artist', 'Album', 'Title', 'Rating', 'Duration'])
-    album_df['timerating'] = album_df.Duration * album_df.Rating
 
     return album_df
 
@@ -88,11 +89,12 @@ def create_test_dataframe():
 
     test_df = pd.DataFrame(test_list,columns=['Artist', 'Album', 'Title', 'Rating', 'Duration'])
 
-    test_df['timerating'] = test_df.Duration * test_df.Rating
-
     return test_df
 
-def ranking_alg(df):
+def simple_ranking_alg(df):
+
+    #Add a timerating column
+    df['timerating'] = df.Duration * df.Rating
 
     #Group by album
     df.drop(['Title'],axis=1, inplace=True)
@@ -107,17 +109,66 @@ def ranking_alg(df):
 
     grouped_df = grouped_df.merge(elimination_df, how = 'left', on = ['Artist', 'Album'])
 
-    #Calculate the Piprating (TM). This is an extremely basic first attempt (simple time-weighted average)
-    grouped_df['piprating'] = grouped_df.timerating / grouped_df.Duration
+
+    #Get a list of albums that are not fully rated
+    unranked_albums_df = grouped_df[grouped_df.AlbumMinRating == -1]
+    unranked_albums_df = unranked_albums_df.drop(['timerating', 'Duration', 'AlbumMinRating'], axis = 1)
+
+    print("Number of unranked albums: {}".format(unranked_albums_df.shape[0]))
+
 
     #Drop all rows with min rating -1 (means unrated in MM)
     grouped_df = grouped_df[grouped_df.AlbumMinRating != -1]
 
+    #Calculate the Piprating (TM). This is an extremely basic first attempt (simple time-weighted average)
+    grouped_df['piprating'] = grouped_df.timerating / grouped_df.Duration * 100
+    grouped_df['piprating'] = grouped_df['piprating'].astype(int)
+
     #Drop unnecessary columns
-    grouped_df.drop(['timerating','Duration', 'AlbumMinRating'], axis=1,inplace=True)
+    grouped_df.drop(['timerating', 'Duration', 'AlbumMinRating'], axis=1,inplace=True)
 
-    return grouped_df
+    return grouped_df, unranked_albums_df
 
+def sqrt_duration_ranking_alg(df):
+    #This algorithm attempts to remove the dominance of an album by a few very long tracks
+    #e.g. Alice's Restaurant
+
+    #Add a timerating based on sqrt of duration
+    df['sqrt_of_duration'] = df['Duration'].pow(0.5)
+    df['timerating'] = df.sqrt_of_duration * df.Rating
+
+    #Group by album
+    df.drop(['Title','Duration'],axis=1, inplace=True)
+    grouped_df = df.groupby(['Artist','Album'], axis = 0).agg({'timerating': 'sum', 'sqrt_of_duration': 'sum'})
+
+    #Need to drop any album that doesn't have all its songs rated
+
+    #Make a new df with the minimum rating from each album
+    #Then merge it with the main df
+    elimination_df = df.groupby(['Artist', 'Album'], axis = 0).agg({'Rating': 'min'})
+    elimination_df.rename(columns = {'Rating':'AlbumMinRating'}, inplace =True)
+
+    grouped_df = grouped_df.merge(elimination_df, how = 'left', on = ['Artist', 'Album'])
+
+
+    #Get a list of albums that are not fully rated
+    unranked_albums_df = grouped_df[grouped_df.AlbumMinRating == -1]
+    unranked_albums_df = unranked_albums_df.drop(['timerating', 'sqrt_of_duration', 'AlbumMinRating'], axis = 1)
+
+    print("Number of unranked albums: {}".format(unranked_albums_df.shape[0]))
+
+
+    #Drop all rows with min rating -1 (means unrated in MM)
+    grouped_df = grouped_df[grouped_df.AlbumMinRating != -1]
+
+    #Calculate the Piprating (TM). This is an extremely basic first attempt (simple time-weighted average)
+    grouped_df['piprating'] = grouped_df.timerating / grouped_df.sqrt_of_duration * 100
+    grouped_df['piprating'] = grouped_df['piprating'].astype(int)
+
+    #Drop unnecessary columns
+    grouped_df.drop(['timerating', 'sqrt_of_duration', 'AlbumMinRating'], axis=1,inplace=True)
+
+    return grouped_df, unranked_albums_df
 
 if __name__ == '__main__':
 
@@ -129,7 +180,18 @@ if __name__ == '__main__':
 
     # output_df = create_test_dataframe() #uncomment this line to use the test df
 
-    ranked_df = ranking_alg(output_df).sort_values(by = "piprating", ascending = False)
+    ranked_df, unranked_df = sqrt_duration_ranking_alg(output_df)
+
+    ranked_df.sort_values(by = "piprating", ascending = False, inplace = True)
+
+    ranked_df.reset_index(inplace=True)
+
+    ranked_df.index = np.arange(1, len(ranked_df) + 1)
 
     print(ranked_df)
 
+    print("Number of ranked albums: {}".format(ranked_df.shape[0]))
+
+    with pd.ExcelWriter('album_rankings.xlsx') as writer:
+        ranked_df.to_excel(writer, sheet_name = "Album Rankings")
+        unranked_df.to_excel(writer, sheet_name="Albums to be ranked")
