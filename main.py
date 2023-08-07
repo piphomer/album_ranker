@@ -9,13 +9,13 @@ pd.set_option('display.max_rows', None)
 pd.options.display.width = 250
 
 def read_db():
-    dbfile = 'C:/Users/phill/Music/MM_20230726222029.DB'
+    dbfile = 'C:/Users/phill/Music/MM_20230807232948.DB'
     if os.path.isfile(dbfile):
         con = sqlite3.connect(dbfile)
         cur = con.cursor()
 
         sql = """
-            SELECT AlbumArtist, Album, SongTitle, Rating, SongLength
+            SELECT AlbumArtist, Album, SongTitle, Rating, SongLength, Custom1
             FROM Songs
             WHERE length(Album) > 0
             """
@@ -32,7 +32,7 @@ def read_db():
 
 def create_dataframe(input_list):
 
-    df = pd.DataFrame(input_list, columns=['Artist', 'Album', 'Title', 'Rating', 'Duration'])
+    df = pd.DataFrame(input_list, columns=['Artist', 'Album', 'Title', 'Rating', 'Duration', 'Album Type'])
 
     return df
 
@@ -55,7 +55,17 @@ def ranking_alg(df):
     #Group by album
     df.drop(['Title'],axis=1, inplace=True)
     grouped_df = df.groupby(['Album', 'Artist'], axis = 0)\
-        .agg({'Rating': 'mean', 'timerating': 'sum', 'timerating_2': 'sum', 'timerating_3': 'sum', 'Duration': 'sum', 'sqrt_of_duration': 'sum'})
+        .agg({'Album Type': 'first',
+              'Rating': 'mean',
+              'timerating': 'sum',
+              'timerating_2': 'sum',
+              'timerating_3': 'sum',
+              'Duration': 'sum',
+              'sqrt_of_duration': 'sum'})
+
+
+    #Drop Greatest Hits collections and similar
+    grouped_df = grouped_df[grouped_df['Album Type'] != 'Greatest Hits']
 
     #Need to drop any album that doesn't have all its songs rated
 
@@ -78,50 +88,28 @@ def ranking_alg(df):
     #Drop all rows with min rating -1 (means unrated in MM)
     grouped_df = grouped_df[grouped_df.AlbumMinRating != -1]
 
-    #Get mean and sigma of album lengths
-
-    AlbumMeanLength = grouped_df.AlbumDuration.mean() / 1000 / 60
-    print("Album Mean Length = {}".format(AlbumMeanLength))
-
-    AlbumLengthSigma = grouped_df.AlbumDuration.std() / 1000 / 60
-    print("Album Length Sigma = {}".format(AlbumLengthSigma))
-
-    print("Album Max Length = {}".format(grouped_df.AlbumDuration.max()))
-
-    #Calculate the Piprating (TM). This is an extremely basic first attempt (simple time-weighted average)
-    grouped_df['piprating'] = grouped_df.timerating / grouped_df.Duration * 100
-    grouped_df['piprating'] = grouped_df['piprating'].astype(int)
-
-    #Calculate version 2 of Piprating(TM)
-    grouped_df['piprating_2'] = grouped_df.timerating_2 / grouped_df.sqrt_of_duration * 100
-    grouped_df['piprating_2'] = grouped_df['piprating_2'].astype(int)
-
-    #Calculate version 3 of Piprating(TM)
-    grouped_df['piprating_3'] = grouped_df.timerating_3 / grouped_df.sqrt_of_duration * 100
-    grouped_df['piprating_3'] = grouped_df['piprating_3'].astype(int)
-
     #Calculate version 4 of Piprating(TM)
     grouped_df['piprating_4'] = grouped_df.timerating_2 / grouped_df.sqrt_of_duration * 100 * (1 + grouped_df.AlbumSigma / 60).pow(0.2)
     grouped_df['piprating_4'] = grouped_df['piprating_4'].astype(int)
 
     #Calculate version 5 of Piprating(TM)
-    bin_labels = [1,2,3,4,5,6,7,8,9,10]
-    grouped_df['rating_bin'] = pd.cut(grouped_df['piprating_4'], bins = 10, labels=bin_labels)
-    grouped_df['rating_bin'] = grouped_df['rating_bin'].astype(int)
+    bin_labels = [0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,8.5,9,9.5,10]
+    grouped_df['rating_bin'] = pd.cut(grouped_df['piprating_4'], bins = 20, labels=bin_labels)
+    grouped_df['rating_bin'] = grouped_df['rating_bin'].astype(float)
 
-    grouped_df['duration_bin'] = pd.cut(grouped_df['AlbumDuration'], bins = 10, labels=bin_labels)
-    grouped_df['duration_bin'] = grouped_df['duration_bin'].astype(int)
+    grouped_df['duration_bin'] = pd.cut(grouped_df['AlbumDuration'], bins = 20, labels=bin_labels)
+    grouped_df['duration_bin'] = grouped_df['duration_bin'].astype(float)
     # print(grouped_df.AlbumDuration.describe(percentiles=[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1])/60000)
-    grouped_df['pipscalefactor'] = (-0.03 * grouped_df['rating_bin'] +1 ) * (1-(grouped_df['duration_bin']-1)/9) \
-                                    + (0.06 * grouped_df['rating_bin'] + 0.6) * (grouped_df['duration_bin']-1)/9
+    grouped_df['pipscalefactor'] = (-0.02 * grouped_df['rating_bin'] +1 ) * (1-(grouped_df['duration_bin']-1)/9) \
+                                    + (0.05 * grouped_df['rating_bin'] + 0.8) * (grouped_df['duration_bin']-1)/9
 
     grouped_df['piprating_5'] = grouped_df['piprating_4'] * grouped_df['pipscalefactor']
-
+    grouped_df['piprating_5'] = grouped_df['piprating_5'].astype(int)
 
     #Drop unnecessary columns
     grouped_df.drop(['timerating', 'Duration', 'timerating_2',
                      'sqrt_of_duration','timerating_3','AlbumMinRating'
-                     ,'AlbumSigma', 'AlbumDuration'], axis=1,inplace=True)
+                     ,'AlbumSigma', 'Rating', 'AlbumDuration'], axis=1,inplace=True)
 
     return grouped_df, unranked_albums_df
 
