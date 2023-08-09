@@ -9,7 +9,8 @@ pd.set_option('display.max_rows', None)
 pd.options.display.width = 250
 
 def read_db():
-    dbfile = 'C:/Users/phill/Music/MM_20230807232948.DB'
+    # dbfile = 'C:/Users/phill/Music/MM_20230807232948.DB'
+    dbfile = 'C:/Users/phill/AppData/Roaming/MediaMonkey5/MM5.DB' #Slight risk of corruption by working on live DB
     if os.path.isfile(dbfile):
         con = sqlite3.connect(dbfile)
         cur = con.cursor()
@@ -66,6 +67,7 @@ def ranking_alg(df):
 
     #Drop Greatest Hits collections and similar
     grouped_df = grouped_df[grouped_df['Album Type'] != 'Greatest Hits']
+    grouped_df = grouped_df[grouped_df['Album Type'] != 'Compilation']
 
     #Need to drop any album that doesn't have all its songs rated
 
@@ -99,7 +101,7 @@ def ranking_alg(df):
 
     grouped_df['duration_bin'] = pd.cut(grouped_df['AlbumDuration'], bins = 20, labels=bin_labels)
     grouped_df['duration_bin'] = grouped_df['duration_bin'].astype(float)
-    # print(grouped_df.AlbumDuration.describe(percentiles=[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1])/60000)
+
     grouped_df['pipscalefactor'] = (-0.02 * grouped_df['rating_bin'] +1 ) * (1-(grouped_df['duration_bin']-1)/9) \
                                     + (0.05 * grouped_df['rating_bin'] + 0.8) * (grouped_df['duration_bin']-1)/9
 
@@ -138,7 +140,7 @@ if __name__ == '__main__':
 
     ranked_df.index = np.arange(1, len(ranked_df) + 1)
 
-    print(ranked_df)
+    print(ranked_df.head(25))
 
     print("Number of ranked albums: {}".format(ranked_df.shape[0]))
 
@@ -146,7 +148,21 @@ if __name__ == '__main__':
     binned_df = create_dataframe(input_list)
     binned_df = ratings_binning(binned_df)
 
-    with pd.ExcelWriter('album_rankings.xlsx') as writer:
-        ranked_df.to_excel(writer, sheet_name = "Album Rankings")
+    with pd.ExcelWriter('album_rankings.xlsx', engine="xlsxwriter") as writer:
+        ranked_df.to_excel(writer, sheet_name = "Album Rankings", startrow=1, header=False, index=False)
+        # Get the xlsxwriter workbook and worksheet objects.
+        workbook = writer.book
+        worksheet = writer.sheets["Album Rankings"]
+        # Get the dimensions of the dataframe.
+        (max_row, max_col) = ranked_df.shape
+        # Create a list of column headers, to use in add_table().
+        column_settings = [{"header": column} for column in ranked_df.columns]
+        # Add the Excel table structure. Pandas will add the data.
+        worksheet.add_table(0, 0, max_row, max_col - 1, {"columns": column_settings})
+        # # Make the columns wider for clarity.
+        # worksheet.set_column(0, max_col - 1, 12)
+
         unranked_df.to_excel(writer, sheet_name="Albums to be ranked")
         binned_df.to_excel(writer, sheet_name="Ratings Histogram")
+
+        writer.close
