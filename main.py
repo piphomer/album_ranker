@@ -102,6 +102,7 @@ def ranking_alg(df):
     grouped_df['duration_bin'] = pd.cut(grouped_df['AlbumDuration'], bins = 20, labels=bin_labels)
     grouped_df['duration_bin'] = grouped_df['duration_bin'].astype(float)
 
+    #Boost good/long albums, penalise good/short and bad/long albums
     grouped_df['pipscalefactor'] = (-0.02 * grouped_df['rating_bin'] +1 ) * (1-(grouped_df['duration_bin']-1)/9) \
                                     + (0.05 * grouped_df['rating_bin'] + 0.8) * (grouped_df['duration_bin']-1)/9
 
@@ -113,13 +114,19 @@ def ranking_alg(df):
                      'sqrt_of_duration','timerating_3','AlbumMinRating'
                      ,'AlbumSigma', 'Rating', 'AlbumDuration'], axis=1,inplace=True)
 
+    unranked_albums_df.drop(['Rating','timerating_2','timerating_3','sqrt_of_duration','AlbumSigma','AlbumDuration'],axis=1,inplace=True)
+
     return grouped_df, unranked_albums_df
 
 def ratings_binning(df1):
 
     df1.loc[df1.Rating < 0, 'Rating'] = 0 #unrated tracks in MM have rating value -1 in the db file
 
+    df1['Rating'] = df1['Rating'] / 20
+
     df1 = df1.groupby(['Rating'], axis=0).agg({'Title': 'count'})
+
+
 
     return df1
 
@@ -140,6 +147,10 @@ if __name__ == '__main__':
 
     ranked_df.index = np.arange(1, len(ranked_df) + 1)
 
+    unranked_df.reset_index(inplace=True)
+
+    unranked_df.index = np.arange(1, len(unranked_df) + 1)
+
     print(ranked_df.head(25))
 
     print("Number of ranked albums: {}".format(ranked_df.shape[0]))
@@ -149,20 +160,55 @@ if __name__ == '__main__':
     binned_df = ratings_binning(binned_df)
 
     with pd.ExcelWriter('album_rankings.xlsx', engine="xlsxwriter") as writer:
-        ranked_df.to_excel(writer, sheet_name = "Album Rankings", startrow=1, header=False, index=False)
-        # Get the xlsxwriter workbook and worksheet objects.
         workbook = writer.book
+
+        ranked_df.to_excel(writer, sheet_name = "Album Rankings", startrow=1, header=False, index=True)
+        # Get the xlsxwriter workbook and worksheet objects.
         worksheet = writer.sheets["Album Rankings"]
         # Get the dimensions of the dataframe.
         (max_row, max_col) = ranked_df.shape
         # Create a list of column headers, to use in add_table().
         column_settings = [{"header": column} for column in ranked_df.columns]
+
+        column_settings.insert(0,{'header':'#'})
         # Add the Excel table structure. Pandas will add the data.
-        worksheet.add_table(0, 0, max_row, max_col - 1, {"columns": column_settings})
+        worksheet.add_table(0, 0, max_row, max_col, {"columns": column_settings,
+                                                     "style": "Table Style Medium 1",
+                                                     "banded_rows": True})
         # # Make the columns wider for clarity.
         # worksheet.set_column(0, max_col - 1, 12)
 
-        unranked_df.to_excel(writer, sheet_name="Albums to be ranked")
+
+        unranked_df.to_excel(writer, sheet_name="Albums to be ranked", startrow=1, header=False, index=True)
+        worksheet = writer.sheets["Albums to be ranked"]
+        # Get the dimensions of the dataframe.
+        (max_row, max_col) = unranked_df.shape
+        # Create a list of column headers, to use in add_table().
+        column_settings = [{"header": column} for column in unranked_df.columns]
+
+        column_settings.insert(0,{'header':'#'})
+        # Add the Excel table structure. Pandas will add the data.
+        worksheet.add_table(0, 0, max_row, max_col, {"columns": column_settings,
+                                                     "style": "Table Style Medium 1",
+                                                     "banded_rows": True})
+        # # Make the columns wider for clarity.
+        # worksheet.set_column(0, max_col - 1, 12)
+
         binned_df.to_excel(writer, sheet_name="Ratings Histogram")
+        worksheet = writer.sheets["Ratings Histogram"]
+
+
+        (max_row, max_col) = binned_df.shape
+
+
+        worksheet.add_table(0, 0, max_row, max_col, {"columns": [{'header': 'Rating'}, {'header': 'Count'}]})
+
+        chart = workbook.add_chart({'type': 'column'})
+        chart.add_series({"categories": "='Ratings Histogram'!$A$2:$A$12", "values": "='Ratings Histogram'!$B$2:$B$12"})
+        chart.set_title({'name': 'Ratings Distribution'})
+        chart.set_legend({'none': True})
+
+        # Insert the chart into the worksheet.
+        worksheet.insert_chart('D2', chart)
 
         writer.close
