@@ -75,8 +75,7 @@ def ranking_alg(df):
     #Then merge it with the main df
     helper_df = df.groupby(['Album', 'Artist'], axis = 0).agg(
                                                             AlbumMinRating = ('Rating', 'min'),
-                                                            AlbumSigma = ('Rating', 'std'),
-                                                            AlbumDuration = ('Duration', 'sum'))\
+                                                            AlbumSigma = ('Rating', 'std'))\
                                                             .fillna(0)
 
     grouped_df = grouped_df.merge(helper_df, how = 'left', on = ['Album', 'Artist'])
@@ -90,31 +89,36 @@ def ranking_alg(df):
     #Drop all rows with min rating -1 (means unrated in MM)
     grouped_df = grouped_df[grouped_df.AlbumMinRating != -1]
 
+    # Cap Album Duration at 100 mins..
+    # (There are only very few albums longer than this so do a simple hack to avoid more complicated bin manipulation)
+    grouped_df.Duration = grouped_df.Duration.clip(upper=6000000)
+
     #Calculate version 4 of Piprating(TM)
-    grouped_df['piprating_4'] = grouped_df.timerating_2 / grouped_df.sqrt_of_duration * 100 * (1 + grouped_df.AlbumSigma / 60).pow(0.2)
+    grouped_df['piprating_4'] = grouped_df.timerating_2 / grouped_df.sqrt_of_duration * 100 * (1 + grouped_df.AlbumSigma / 60).pow(0.3)
     grouped_df['piprating_4'] = grouped_df['piprating_4'].astype(int)
 
     #Calculate version 5 of Piprating(TM)
     bin_labels = [0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6,6.5,7,7.5,8,8.5,9,9.5,10]
-    grouped_df['rating_bin'] = pd.cut(grouped_df['piprating_4'], bins = 20, labels=bin_labels)
+    grouped_df['rating_bin'] = pd.cut(grouped_df['piprating_4'], 20, labels=bin_labels)
     grouped_df['rating_bin'] = grouped_df['rating_bin'].astype(float)
 
-    grouped_df['duration_bin'] = pd.cut(grouped_df['AlbumDuration'], bins = 20, labels=bin_labels)
+    grouped_df['duration_bin'] = pd.cut(grouped_df['Duration'], 20, labels=bin_labels)
     grouped_df['duration_bin'] = grouped_df['duration_bin'].astype(float)
 
     #Boost good/long albums, penalise good/short and bad/long albums
-    grouped_df['pipscalefactor'] = (-0.02 * grouped_df['rating_bin'] +1 ) * (1-(grouped_df['duration_bin']-1)/9) \
-                                    + (0.05 * grouped_df['rating_bin'] + 0.8) * (grouped_df['duration_bin']-1)/9
+    grouped_df['pipscalefactor'] = (-0.015 * grouped_df['rating_bin'] + 1) * (1 - grouped_df['duration_bin']/10) \
+                                    + (0.045 * grouped_df['rating_bin'] + 0.85) * (grouped_df['duration_bin'])/10
 
     grouped_df['piprating_5'] = grouped_df['piprating_4'] * grouped_df['pipscalefactor']
     grouped_df['piprating_5'] = grouped_df['piprating_5'].astype(int)
 
+
     #Drop unnecessary columns
     grouped_df.drop(['timerating', 'Duration', 'timerating_2',
                      'sqrt_of_duration','timerating_3','AlbumMinRating'
-                     ,'AlbumSigma', 'Rating', 'AlbumDuration'], axis=1,inplace=True)
+                     ,'AlbumSigma', 'Rating'], axis=1,inplace=True)
 
-    unranked_albums_df.drop(['Rating','timerating_2','timerating_3','sqrt_of_duration','AlbumSigma','AlbumDuration'],axis=1,inplace=True)
+    unranked_albums_df.drop(['Rating','timerating_2','timerating_3','sqrt_of_duration','AlbumSigma'],axis=1,inplace=True)
 
     return grouped_df, unranked_albums_df
 
