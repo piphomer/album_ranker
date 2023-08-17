@@ -16,7 +16,7 @@ def read_db():
         cur = con.cursor()
 
         sql = """
-            SELECT AlbumArtist, Album, SongTitle, Rating, SongLength, Custom1
+            SELECT AlbumArtist, Album, SongTitle, Rating, SongLength, Custom1, Year/10000
             FROM Songs
             WHERE length(Album) > 0
             """
@@ -33,7 +33,7 @@ def read_db():
 
 def create_dataframe(input_list):
 
-    df = pd.DataFrame(input_list, columns=['Artist', 'Album', 'Title', 'Rating', 'Duration', 'Album Type'])
+    df = pd.DataFrame(input_list, columns=['Artist', 'Album', 'Title', 'Rating', 'Duration', 'Album Type', 'Year'])
 
     return df
 
@@ -49,6 +49,7 @@ def ranking_alg(df):
     df.drop(['Title'],axis=1, inplace=True)
     grouped_df = df.groupby(['Album', 'Artist'], axis = 0) \
         .agg({'Album Type': 'first',
+              'Year': 'first',
               'Rating': 'mean',
               'timerating': 'sum',
               'Duration': 'sum',
