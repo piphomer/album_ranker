@@ -11,6 +11,7 @@ pd.options.display.width = 250
 def read_db():
 
     dbfile = 'C:/Users/phill/AppData/Roaming/MediaMonkey5/MM5.DB' #Slight risk of corruption by working on live DB
+
     if os.path.isfile(dbfile):
         con = sqlite3.connect(dbfile)
         cur = con.cursor()
@@ -39,11 +40,13 @@ def create_dataframe(input_list):
 
 def ranking_alg(df):
 
-
     #Add a timerating based on sqrt of duration to reduce influence of long songs
     #and avoid albums dominated by one or more very long song getting overrated
     df['sqrt_of_duration'] = df['Duration'].pow(0.5)
     df['timerating'] = df.sqrt_of_duration * df.Rating
+
+    #Add a helper column to let us count how many unrated songs in each albun
+    df['unrated_songs'] = np.where(df['Rating'] == -1, 1, 0)
 
     #Group by album
     df.drop(['Title'],axis=1, inplace=True)
@@ -53,12 +56,10 @@ def ranking_alg(df):
               'Rating': 'mean',
               'timerating': 'sum',
               'Duration': 'sum',
-              'sqrt_of_duration': 'sum'})
+              'sqrt_of_duration': 'sum',
+              'unrated_songs': 'sum' })
 
 
-    #Drop Greatest Hits collections and similar
-    grouped_df = grouped_df[grouped_df['Album Type'] != 'Greatest Hits']
-    grouped_df = grouped_df[grouped_df['Album Type'] != 'Compilation']
 
     #Need to drop any album that doesn't have all its songs rated
 
@@ -77,12 +78,18 @@ def ranking_alg(df):
 
     print("Number of unranked albums: {}".format(unranked_albums_df.shape[0]))
 
+    #Drop Greatest Hits collections and similar
+    grouped_df = grouped_df[grouped_df['Album Type'] != 'Greatest Hits']
+    grouped_df = grouped_df[grouped_df['Album Type'] != 'Compilation']
+    grouped_df = grouped_df[grouped_df['Album Type'] != 'Musical']
+    grouped_df = grouped_df[grouped_df['Album Type'] != 'Radio Series']
+
     #Drop all rows with min rating -1 (means unrated in MM)
     grouped_df = grouped_df[grouped_df.AlbumMinRating != -1]
 
     # Cap Album Duration at 100 mins..
     # (There are only very few albums longer than this so do a simple hack to avoid more complicated bin manipulation)
-    grouped_df.Duration = grouped_df.Duration.clip(upper=5000000)
+    grouped_df.Duration = grouped_df.Duration.clip(upper=6000000)
 
     #Calculate version 4 of Piprating(TM)
     grouped_df['piprating_4'] = grouped_df.timerating / grouped_df.sqrt_of_duration * 100 * (1 + grouped_df.AlbumSigma / 60).pow(0.3)
@@ -116,21 +123,25 @@ def ranking_alg(df):
                                    + (0.05 * grouped_df['rating_bin'] + 0.8) * (grouped_df['duration_bin'])/10
 
     grouped_df['piprating_5'] = grouped_df['piprating_4'] * grouped_df['pipscalefactor']
+
     grouped_df['piprating_5'] = grouped_df['piprating_5'].astype(int)
 
     grouped_df['Duration'] = grouped_df['Duration']/1000/60
+    grouped_df['Duration'] = grouped_df['Duration'].astype(int)
 
     #Drop unnecessary columns
     grouped_df.drop(['timerating',
                      'sqrt_of_duration',
                      'AlbumMinRating',
                      'AlbumSigma',
-                     'Rating'], axis=1,inplace=True)
+                     'Rating',
+                     'unrated_songs'], axis=1,inplace=True)
 
     unranked_albums_df.drop(['Rating',
                              'timerating',
                              'sqrt_of_duration',
-                             'AlbumSigma'],axis=1,inplace=True)
+                             'AlbumSigma',
+                             'Year'],axis=1,inplace=True)
 
     return grouped_df, unranked_albums_df
 
@@ -197,7 +208,9 @@ def output_to_excel():
         worksheet.add_table(0, 0, max_row, max_col, {"columns": [{'header': 'Rating'}, {'header': 'Count'}]})
 
         chart = workbook.add_chart({'type': 'column'})
-        chart.add_series({"categories": "='Ratings Histogram'!$A$2:$A$12", "values": "='Ratings Histogram'!$B$2:$B$12"})
+        chart.add_series({"categories": "='Ratings Histogram'!$A$2:$A$12",
+                          "values": "='Ratings Histogram'!$B$2:$B$12",
+                          'data_labels': {'value': True}})
         chart.set_title({'name': 'Ratings Distribution'})
         chart.set_legend({'none': True})
 
@@ -221,6 +234,8 @@ if __name__ == '__main__':
     ranked_df.reset_index(inplace=True)
 
     ranked_df.index = np.arange(1, len(ranked_df) + 1)
+
+    unranked_df.sort_values(by="unrated_songs", ascending=True, inplace=True)
 
     unranked_df.reset_index(inplace=True)
 
