@@ -38,19 +38,21 @@ def create_dataframe(input_list):
 
     return df
 
-def ranking_alg(df):
+def ranking_alg(df, album_type):
+
+    this_df = df.copy(deep=True) #Work on a copy without modifying the original df
 
     #Add a timerating based on sqrt of duration to reduce influence of long songs
     #and avoid albums dominated by one or more very long song getting overrated
-    df['sqrt_of_duration'] = df['Duration'].pow(0.5)
-    df['timerating'] = df.sqrt_of_duration * df.Rating
+    this_df['sqrt_of_duration'] = this_df['Duration'].pow(0.5)
+    this_df['timerating'] = this_df.sqrt_of_duration * this_df.Rating
 
     #Add a helper column to let us count how many unrated songs in each albun
-    df['unrated_songs'] = np.where(df['Rating'] == -1, 1, 0)
+    this_df['unrated_songs'] = np.where(this_df['Rating'] == -1, 1, 0)
 
     #Group by album
-    df.drop(['Title'],axis=1, inplace=True)
-    grouped_df = df.groupby(['Album', 'Artist'], axis = 0) \
+    this_df.drop(['Title'],axis=1, inplace=True)
+    grouped_df = this_df.groupby(['Album', 'Artist'], axis = 0) \
         .agg({'Album Type': 'first',
               'Year': 'first',
               'Rating': 'mean',
@@ -65,7 +67,7 @@ def ranking_alg(df):
 
     #Make a new df with the minimum rating and standard deviation of rating for each album
     #Then merge it with the main df
-    helper_df = df.groupby(['Album', 'Artist'], axis = 0).agg(
+    helper_df = this_df.groupby(['Album', 'Artist'], axis = 0).agg(
         AlbumMinRating = ('Rating', 'min'),
         AlbumSigma = ('Rating', 'std'))\
         .fillna(0)
@@ -78,11 +80,8 @@ def ranking_alg(df):
 
     print("Number of unranked albums: {}".format(unranked_albums_df.shape[0]))
 
-    #Drop Greatest Hits collections and similar
-    grouped_df = grouped_df[grouped_df['Album Type'] != 'Greatest Hits']
-    grouped_df = grouped_df[grouped_df['Album Type'] != 'Compilation']
-    grouped_df = grouped_df[grouped_df['Album Type'] != 'Musical']
-    grouped_df = grouped_df[grouped_df['Album Type'] != 'Radio Series']
+    #Only process the desired album type
+    grouped_df = grouped_df[grouped_df['Album Type'] == album_type]
 
     #Drop all rows with min rating -1 (means unrated in MM)
     grouped_df = grouped_df[grouped_df.AlbumMinRating != -1]
@@ -143,7 +142,25 @@ def ranking_alg(df):
                              'AlbumSigma',
                              'Year'],axis=1,inplace=True)
 
+    ranked_df = grouped_df.sort_values(by="piprating_5", ascending=False)
+
+    ranked_df.reset_index(inplace=True)
+
+    ranked_df.index = np.arange(1, len(ranked_df) + 1)
+
+    unranked_albums_df.sort_values(by="unrated_songs", ascending=True, inplace=True)
+
+    unranked_albums_df.reset_index(inplace=True)
+
+    unranked_albums_df.index = np.arange(1, len(unranked_albums_df) + 1)
+
+    print(ranked_df.head(30))
+
+    print("Number of ranked albums: {}".format(ranked_df.shape[0]))
+
     return grouped_df, unranked_albums_df
+
+
 
 def ratings_binning(df1):
 
@@ -227,23 +244,13 @@ if __name__ == '__main__':
 
     input_df = create_dataframe(input_list)
 
-    ranked_df, unranked_df = ranking_alg(input_df)
+    album_type_list = ['Studio', 'Live', 'Greatest Hits', 'Compilation', 'Radio Series']
 
-    ranked_df.sort_values(by="piprating_5", ascending = False, inplace = True)
+    for album_type in album_type_list:
 
-    ranked_df.reset_index(inplace=True)
+        print("Processing", album_type, "album type")
+        ranked_df, unranked_df = ranking_alg(input_df, album_type)
 
-    ranked_df.index = np.arange(1, len(ranked_df) + 1)
-
-    unranked_df.sort_values(by="unrated_songs", ascending=True, inplace=True)
-
-    unranked_df.reset_index(inplace=True)
-
-    unranked_df.index = np.arange(1, len(unranked_df) + 1)
-
-    print(ranked_df.head(30))
-
-    print("Number of ranked albums: {}".format(ranked_df.shape[0]))
 
     #Put individual song ratings into bins
     binned_df = create_dataframe(input_list)
