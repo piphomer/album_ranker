@@ -8,6 +8,11 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
 pd.options.display.width = 250
 
+album_type_list = ['Studio', 'Live', 'Greatest Hits', 'Compilation', 'Radio Series']
+
+album_type_dict = {'Studio': 'studio_df', 'Live': 'live_df', 'Greatest Hits': 'greatest_hits_df',
+                 'Compilation': 'compilation_df', 'Radio Series': 'radio_series_df'}
+
 def read_db():
 
     dbfile = 'C:/Users/phill/AppData/Roaming/MediaMonkey5/MM5.DB' #Slight risk of corruption by working on live DB
@@ -38,9 +43,9 @@ def create_dataframe(input_list):
 
     return df
 
-def ranking_alg(df, album_type):
+def ranking_alg(album_type):
 
-    this_df = df.copy(deep=True) #Work on a copy without modifying the original df
+    this_df = input_df.copy(deep=True) #Work on a copy without modifying the original df
 
     #Add a timerating based on sqrt of duration to reduce influence of long songs
     #and avoid albums dominated by one or more very long song getting overrated
@@ -158,7 +163,7 @@ def ranking_alg(df, album_type):
 
     print("Number of ranked albums: {}".format(ranked_df.shape[0]))
 
-    return grouped_df, unranked_albums_df
+    return ranked_df, unranked_albums_df
 
 
 
@@ -174,28 +179,35 @@ def ratings_binning(df1):
 
 def output_to_excel():
 
+    print("Writing output to Excel...")
+
     with pd.ExcelWriter('album_rankings.xlsx', engine="xlsxwriter") as writer:
         workbook = writer.book
 
-        ranked_df.to_excel(writer, sheet_name = "Album Rankings", startrow=1, header=False, index=True)
-        # Get the xlsxwriter workbook and worksheet objects.
-        worksheet = writer.sheets["Album Rankings"]
-        # Get the dimensions of the dataframe.
-        (max_row, max_col) = ranked_df.shape
-        # Create a list of column headers, to use in add_table().
-        column_settings = [{"header": column} for column in ranked_df.columns]
+        for album_df in album_type_df_dict:
 
-        column_settings.insert(0,{'header':'#'})
-        # Add the Excel table structure. Pandas will add the data.
-        worksheet.add_table(0, 0, max_row, max_col, {"columns": column_settings,
-                                                     "style": "Table Style Medium 1",
-                                                     "banded_rows": True})
+            print(album_type_dict[album_df])
+            print(type(album_df))
 
-        # Make the columns wider for clarity.
-        worksheet.set_column(0, 0, 4)
-        worksheet.set_column(1, 1, 75)
-        worksheet.set_column(2, 2, 38)
-        worksheet.set_column(3, 3, 14)
+            album_type_df_dict[album_df].to_excel(writer, sheet_name = album_df, startrow=1, header=False, index=True)
+            # Get the xlsxwriter workbook and worksheet objects.
+            worksheet = writer.sheets[album_df]
+            # Get the dimensions of the dataframe.
+            (max_row, max_col) = album_type_df_dict[album_df].shape
+            # Create a list of column headers, to use in add_table().
+            column_settings = [{"header": column} for column in album_type_df_dict[album_df].columns]
+
+            column_settings.insert(0,{'header':'#'})
+            # Add the Excel table structure. Pandas will add the data.
+            worksheet.add_table(0, 0, max_row, max_col, {"columns": column_settings,
+                                                         "style": "Table Style Medium 1",
+                                                         "banded_rows": True})
+
+            # Make the columns wider for clarity.
+            worksheet.set_column(0, 0, 4)
+            worksheet.set_column(1, 1, 75)
+            worksheet.set_column(2, 2, 38)
+            worksheet.set_column(3, 3, 14)
 
 
         unranked_df.to_excel(writer, sheet_name="Albums to be ranked", startrow=1, header=False, index=True)
@@ -244,16 +256,20 @@ if __name__ == '__main__':
 
     input_df = create_dataframe(input_list)
 
-    album_type_list = ['Studio', 'Live', 'Greatest Hits', 'Compilation', 'Radio Series']
+    album_type_df_dict = {}
 
     for album_type in album_type_list:
 
         print("Processing", album_type, "album type")
-        ranked_df, unranked_df = ranking_alg(input_df, album_type)
+        #create a df for each type of album in the album list
+        album_type_df_dict[album_type], unranked_df = ranking_alg(album_type)
 
 
     #Put individual song ratings into bins
     binned_df = create_dataframe(input_list)
     binned_df = ratings_binning(binned_df)
+
+    for album_type in album_type_list:
+        print(album_type_df_dict[album_type].head(5))
 
     output_to_excel()
