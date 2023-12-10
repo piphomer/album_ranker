@@ -8,10 +8,10 @@ pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
 pd.options.display.width = 250
 
-album_type_list = ['Studio', 'Live', 'Greatest Hits', 'Compilation', 'Radio Series']
+album_type_list = ['All','Studio', 'Live', 'Greatest Hits', 'Compilation']
 
-album_type_dict = {'Studio': 'studio_df', 'Live': 'live_df', 'Greatest Hits': 'greatest_hits_df',
-                 'Compilation': 'compilation_df', 'Radio Series': 'radio_series_df'}
+album_type_dict = {'All': 'all_df', 'Studio': 'studio_df', 'Live': 'live_df', 'Greatest Hits': 'greatest_hits_df',
+                 'Compilation': 'compilation_df'}
 
 def read_db():
 
@@ -74,7 +74,7 @@ def ranking_alg(album_type):
     #Then merge it with the main df
     helper_df = this_df.groupby(['Album', 'Artist'], axis = 0).agg(
         AlbumMinRating = ('Rating', 'min'),
-        AlbumSigma = ('Rating', 'std'))\
+        AlbumSigma = ('Rating', 'std')) \
         .fillna(0)
 
     grouped_df = grouped_df.merge(helper_df, how = 'left', on = ['Album', 'Artist'])
@@ -85,8 +85,13 @@ def ranking_alg(album_type):
 
     print("Number of unranked albums: {}".format(unranked_albums_df.shape[0]))
 
+    #Don't process these types of albums
+    grouped_df = grouped_df[grouped_df['Album Type'] != 'Musical']
+    grouped_df = grouped_df[grouped_df['Album Type'] != 'Radio Series']
+
     #Only process the desired album type
-    grouped_df = grouped_df[grouped_df['Album Type'] == album_type]
+    if album_type != 'All':
+        grouped_df = grouped_df[grouped_df['Album Type'] == album_type]
 
     #Drop all rows with min rating -1 (means unrated in MM)
     grouped_df = grouped_df[grouped_df.AlbumMinRating != -1]
