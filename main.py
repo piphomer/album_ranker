@@ -24,7 +24,6 @@ def read_db():
         sql = """
             SELECT AlbumArtist, Album, SongTitle, Rating, SongLength, Custom1, Year/10000
             FROM Songs
-            WHERE length(Album) > 0
             """
 
         for row in cur.execute(sql):
@@ -40,6 +39,9 @@ def read_db():
 def create_dataframe(input_list):
 
     df = pd.DataFrame(input_list, columns=['Artist', 'Album', 'Title', 'Rating', 'Duration', 'Album Type', 'Year'])
+
+    df['Album'].replace('', np.nan, inplace=True) #replace empty strings with NaN
+    df.dropna(subset=['Album'], inplace=True)     #then use dropna to get rid of non-album songs
 
     return df
 
@@ -164,8 +166,6 @@ def ranking_alg(album_type):
 
     unranked_albums_df.index = np.arange(1, len(unranked_albums_df) + 1)
 
-    print(ranked_df.head(30))
-
     print("Number of ranked albums: {}".format(ranked_df.shape[0]))
 
     return ranked_df, unranked_albums_df
@@ -174,9 +174,13 @@ def ranking_alg(album_type):
 
 def ratings_binning(df1):
 
+    print(df1.head(50))
+
     df1.loc[df1.Rating < 0, 'Rating'] = 0 #unrated tracks in MM have rating value -1 in the db file
 
     df1['Rating'] = df1['Rating'] / 20
+
+    print(df1.head(50))
 
     df1 = df1.groupby(['Rating'], axis=0).agg({'Title': 'count'})
 
@@ -190,9 +194,6 @@ def output_to_excel():
         workbook = writer.book
 
         for album_df in album_type_df_dict:
-
-            print(album_type_dict[album_df])
-            print(type(album_df))
 
             album_type_df_dict[album_df].to_excel(writer, sheet_name = album_df, startrow=1, header=False, index=True)
             # Get the xlsxwriter workbook and worksheet objects.
@@ -261,6 +262,11 @@ if __name__ == '__main__':
 
     input_df = create_dataframe(input_list)
 
+    #Put individual song ratings into bins
+    binned_df = create_dataframe(input_list)
+    print(binned_df.head(50))
+    binned_df = ratings_binning(binned_df)
+
     album_type_df_dict = {}
 
     for album_type in album_type_list:
@@ -270,11 +276,5 @@ if __name__ == '__main__':
         album_type_df_dict[album_type], unranked_df = ranking_alg(album_type)
 
 
-    #Put individual song ratings into bins
-    binned_df = create_dataframe(input_list)
-    binned_df = ratings_binning(binned_df)
-
-    for album_type in album_type_list:
-        print(album_type_df_dict[album_type].head(5))
 
     output_to_excel()
