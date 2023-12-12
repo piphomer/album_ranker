@@ -41,7 +41,7 @@ def create_dataframe(input_list):
     df = pd.DataFrame(input_list, columns=['Artist', 'Album', 'Title', 'Rating', 'Duration', 'Album Type', 'Year'])
 
     df['Album'].replace('', np.nan, inplace=True) #replace empty strings with NaN
-    df.dropna(subset=['Album'], inplace=True)     #then use dropna to get rid of non-album songs
+
 
     return df
 
@@ -174,16 +174,16 @@ def ranking_alg(album_type):
 
 def ratings_binning(df1):
 
-    print(df1.head(50))
-
     df1.loc[df1.Rating < 0, 'Rating'] = 0 #unrated tracks in MM have rating value -1 in the db file
 
     df1['Rating'] = df1['Rating'] / 20
 
     print(df1.head(50))
 
+
     df1 = df1.groupby(['Rating'], axis=0).agg({'Title': 'count'})
 
+    print(df1.head(50))
     return df1
 
 def output_to_excel():
@@ -260,12 +260,13 @@ if __name__ == '__main__':
 
     read_db()
 
-    input_df = create_dataframe(input_list)
-
     #Put individual song ratings into bins
     binned_df = create_dataframe(input_list)
-    print(binned_df.head(50))
     binned_df = ratings_binning(binned_df)
+
+    input_df = create_dataframe(input_list)
+
+    input_df.dropna(subset=['Album'], inplace=True)     #then use dropna to get rid of non-album songs
 
     album_type_df_dict = {}
 
@@ -274,7 +275,5 @@ if __name__ == '__main__':
         print("Processing", album_type, "album type")
         #create a df for each type of album in the album list
         album_type_df_dict[album_type], unranked_df = ranking_alg(album_type)
-
-
 
     output_to_excel()
