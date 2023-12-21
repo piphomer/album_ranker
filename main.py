@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import os
 import sys
+import xlrd
+from datetime import datetime as dt
 
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
@@ -22,7 +24,14 @@ def read_db():
         cur = con.cursor()
 
         sql = """
-            SELECT AlbumArtist, Album, SongTitle, Rating, SongLength, Custom1, Year/10000
+            SELECT AlbumArtist,
+                    Album,
+                    SongTitle,
+                    Rating,
+                    SongLength,
+                    Custom1,
+                    Year/10000,
+                    LastTimePlayed
             FROM Songs
             """
 
@@ -38,7 +47,7 @@ def read_db():
 
 def create_dataframe(input_list):
 
-    df = pd.DataFrame(input_list, columns=['Artist', 'Album', 'Title', 'Rating', 'Duration', 'Album Type', 'Year'])
+    df = pd.DataFrame(input_list, columns=['Artist', 'Album', 'Title', 'Rating', 'Duration', 'Album Type', 'Year', 'Last Played'])
 
     df['Album'].replace('', np.nan, inplace=True) #replace empty strings with NaN
 
@@ -170,7 +179,25 @@ def ranking_alg(album_type):
 
     return ranked_df, unranked_albums_df
 
+def albums_in_need_of_a_listen():
 
+    this_df = input_df.copy(deep=True) #Work on a copy without modifying the original df
+
+    #group by album, on last played
+
+
+    this_df.drop(['Title'],axis=1, inplace=True)
+    this_df = this_df.groupby(['Album', 'Artist'], axis = 0) \
+        .agg({'Last Played': 'min'})
+
+    #sort by Last Played
+    this_df = this_df.sort_values(by="Last Played", ascending=True)
+
+    this_df['Last Played'] =this_df['Last Played'].apply(lambda x : xlrd.xldate_as_datetime(x, 0))
+
+    print(this_df.head(10))
+
+    #
 
 def ratings_binning(df1):
 
@@ -178,12 +205,8 @@ def ratings_binning(df1):
 
     df1['Rating'] = df1['Rating'] / 20
 
-    print(df1.head(50))
-
-
     df1 = df1.groupby(['Rating'], axis=0).agg({'Title': 'count'})
 
-    print(df1.head(50))
     return df1
 
 def output_to_excel():
@@ -275,5 +298,7 @@ if __name__ == '__main__':
         print("Processing", album_type, "album type")
         #create a df for each type of album in the album list
         album_type_df_dict[album_type], unranked_df = ranking_alg(album_type)
+
+    albums_in_need_of_a_listen()
 
     output_to_excel()
