@@ -193,7 +193,7 @@ def albums_in_need_of_a_listen():
     #sort by Last Played
     this_df = this_df.sort_values(by="Last Played", ascending=True)
 
-    this_df['Last Played'] =this_df['Last Played'].apply(lambda x : xlrd.xldate_as_datetime(x, 0))
+    this_df['Last Played'] =  this_df['Last Played'].apply(lambda x : xlrd.xldate_as_datetime(x, 0).strftime("%d %b %Y"))
 
     print(this_df.head(10))
 
