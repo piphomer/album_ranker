@@ -175,7 +175,11 @@ def ranking_alg(album_type):
 
     unranked_albums_df.index = np.arange(1, len(unranked_albums_df) + 1)
 
-    print("Number of ranked albums: {}".format(ranked_df.shape[0]))
+    if album_type == 'All':
+
+        print(ranked_df.head(30))
+
+        print("Number of ranked albums: {}".format(ranked_df.shape[0]))
 
     return ranked_df, unranked_albums_df
 
@@ -183,19 +187,49 @@ def albums_in_need_of_a_listen():
 
     this_df = input_df.copy(deep=True) #Work on a copy without modifying the original df
 
+    #Drop radio series
+    this_df = this_df[this_df['Album Type'] != 'Radio Series']
+
     #group by album, on last played
-
-
     this_df.drop(['Title'],axis=1, inplace=True)
     this_df = this_df.groupby(['Album', 'Artist'], axis = 0) \
         .agg({'Last Played': 'min'})
+
 
     #sort by Last Played
     this_df = this_df.sort_values(by="Last Played", ascending=True)
 
     this_df['Last Played'] =  this_df['Last Played'].apply(lambda x : xlrd.xldate_as_datetime(x, 0).strftime("%d %b %Y"))
 
-    print(this_df.head(10))
+    print(this_df.head(20))
+
+    #
+
+def top_heavy_albums():
+
+    #Find albums where the earliest tracks have loads of plays and later tracks have been neglected
+
+    this_df = input_df.copy(deep=True) #Work on a copy without modifying the original df
+
+    #group by album
+
+    this_df.drop(['Title'],axis=1, inplace=True)
+    grouped_df = this_df.groupby(['Album', 'Artist'], axis = 0) \
+        .agg({'Album Type': 'first',
+              'Year': 'first',
+              'Rating': 'mean',
+              'timerating': 'sum',
+              'Duration': 'sum',
+              'sqrt_of_duration': 'sum',
+              'unrated_songs': 'sum' })
+
+
+    #sort by Last Played
+    this_df = this_df.sort_values(by="Last Played", ascending=True)
+
+    this_df['Last Played'] =  this_df['Last Played'].apply(lambda x : xlrd.xldate_as_datetime(x, 0).strftime("%d %b %Y"))
+
+    print(this_df.head(20))
 
     #
 
